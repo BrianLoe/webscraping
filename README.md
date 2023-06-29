@@ -1,5 +1,5 @@
 # Webscraping using selenium and beautifoulsoup
-## Job searching on LinkedIn
+## LinkedIn Job Searcher (GPT for identifying skills in job description)
 I built a program to search for jobs using LinkedIn link that is provided by the user or can be provided by the program itself. The final goal is to provide the user with a list of jobs within specified number of pages with information such as the job title, company, location, key skills to be a great fit according to GPT-3. I integrated GPT here to help me identify key skills the recruiter are looking for. 
 
 Current Features:
