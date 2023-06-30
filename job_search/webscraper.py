@@ -9,12 +9,15 @@ import time
 import sys
 import openai
 import pandas as pd
+
+# Import credentials
 params = config()
 openai.api_key = params['api_key']
 system_msg="You are a career coach who understands job requirements"
 
 def gpt_message(msg):
-    
+    ### A function to ask GPT to provide answer as a career coach.
+    ### It will return a response that answers the user message 'msg'
     response = openai.ChatCompletion.create(
                                 model="gpt-3.5-turbo",
                                 messages=[{"role": "system", "content": system_msg},
@@ -24,15 +27,28 @@ def gpt_message(msg):
     return response
 
 def search_job_in_page(job_list, cur_page_num, job_dict):
+    ### A function to search for relevant information about a job.
+    ### Each information is located in different element. This function scrapes each of the information using element and class.
+    ### Returns the current page number which is being scraped.
+    
+    ### The job list which appears on the left-hand side of LinkedIn page.
     job_name = job_list.find_all('li', {'class':'ember-view'})
     for row in job_name:
         try:
+            # Extract the left-hand side info
+            print('Extracting job_title ...')
             job_title = row.find('a').contents[0].strip()
+            print('Extracting company ...')
             company = row.find('div', {'class':'job-card-container__company-name'}).contents[0].strip()
+            # id for the job specified.
             rowid = row.get('id')
             print('Clicking job card ...')
+            # change focus on the right-hand side of page which provide the job card of job clicked.
+            # the id is used to identify which job needs to be clicked.
             driver.find_element(By.XPATH, "//li[@id='"+rowid+"']").click()
+            # Wait for the page to load
             time.sleep(3)
+            # Extract the right-hand side info
             src = driver.page_source
             soup = BeautifulSoup(src, 'html5lib')
             job_card = soup.find('div', {'class':'scaffold-layout__list-detail-inner'})
@@ -48,18 +64,23 @@ def search_job_in_page(job_list, cur_page_num, job_dict):
             suit_msg = "Would the job suit a recent graduate based on this job description (answer with yes or no followed with brief explanation): "
             suit_msg+=text
             response = gpt_message(suit_msg)
+            # store the info in dictionary
             job_dict['job_title'].append(job_title)
             job_dict['company'].append(company)
             job_dict['location'].append(location)
             job_dict['level'].append(level)
             job_dict['time_posted'].append(time_posted)
             job_dict['graduate_suitable'].append(response)
+        # if job is not found anymore, move on to next page.
         except: 
             try:
+                # this stores the page number that were found.
                 p_num = int(row.find('button').attrs.get('aria-label')[-1:])
+                # if current page number is lower, then we need to move on to next page.
                 if cur_page_num<p_num:
                     cur_page_num=p_num
                     break
+                # if current page number is higher, then we need to find next page number until the above condition is true.
                 elif cur_page_num>=p_num:
                     continue
             except:
@@ -67,21 +88,29 @@ def search_job_in_page(job_list, cur_page_num, job_dict):
     return cur_page_num
 
 def get_job_titles_company(last_page, job_dict):
+    ### Iterate until the last_page which is the number of pages user provided.
+    ### This function will call the function to scrape all jobs within a page.
+    ### If it reaches the end of page, it will continue to the next page until it reaches the number of pages user requested.
     for i in range(1, last_page+1):
         src = driver.page_source
 
         # Now using beautiful soup
         soup = BeautifulSoup(src, 'html5lib')
 
+        # Find the element that stores the list of jobs including the job card.
         job_list = soup.find('div', {'class':'scaffold-layout__list-detail-inner'})
-        # print('||Listing all job lists in page ', str(i)+'||')
+
         next_page_num = search_job_in_page(job_list,i, job_dict)
-        # print()
+
+        # Click the next page button.
         driver.find_element(By.XPATH, "//button[@aria-label='Page "+str(next_page_num)+"']").click()
+        # Wait for page to load
         time.sleep(6)
     return next_page_num
 
 def input_rec_url():
+    ### A LinkedIn job search result page for user to provide.
+    ### If not provided, it will use a provided job page link which is recommended page.
     recomend_url = input("Please enter linkedin job search result page link: ")
     if not recomend_url.startswith('https://www.linkedin.com'):
         print("Job site is invalid")
@@ -152,16 +181,19 @@ if __name__ == "__main__":
     time.sleep(5)
     
     print("Getting the job lists ...")
+    # initialise dictionary to store all the information
     job_dict = {}
     job_dict['job_title'] = []
     job_dict['company'] = []
     job_dict['location'] = []
     job_dict['level'] = []
     job_dict['time_posted'] = []
-    # job_dict['skills'] = []
     job_dict['graduate_suitable'] = []
+    
     get_job_titles_company(num_pages, job_dict)
     df = pd.DataFrame(job_dict)
+    
+    # Convert to text file
     print("Creating text file ...")
     df.to_csv('result.txt', index=False)
     print("Text file created")
