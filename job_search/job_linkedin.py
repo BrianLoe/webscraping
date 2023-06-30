@@ -11,11 +11,10 @@ import openai
 import pandas as pd
 params = config()
 openai.api_key = params['api_key']
+system_msg="You are a career coach who understands job requirements"
 
 def search_job_in_page(job_list, cur_page_num, job_dict):
     job_name = job_list.find_all('li', {'class':'ember-view'})
-    system_msg="You are a career coach who understands job requirements"
-    user_msg="List 5 key skills to be a great fit with this job description: "
     for row in job_name:
         try:
             job_title = row.find('a').contents[0].strip()
@@ -35,6 +34,7 @@ def search_job_in_page(job_list, cur_page_num, job_dict):
             time_posted = job_card.find('span', {'class':'jobs-unified-top-card__posted-date'}).contents[0].strip()
             print('Extracting job description ...')
             text = job_card.find('div', {'class':'jobs-description__content jobs-description-content'}).find('span').getText().strip()
+            user_msg="List 5 key skills to be a great fit with this job description: "
             user_msg+=text
             print('Converting job description ...')
             response = openai.ChatCompletion.create(
