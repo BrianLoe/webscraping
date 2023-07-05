@@ -15,6 +15,117 @@ params = config()
 openai.api_key = params['api_key']
 system_msg="You are a career coach who understands job requirements"
 
+def input_rec_url():
+    ### A LinkedIn job search result page for user to provide.
+    ### If not provided, it will use a provided job page link which is recommended page.
+    
+    recomend_url = input("Please enter linkedin job search result page link: ")
+    # check url
+    if not recomend_url.startswith('https://www.linkedin.com'):
+        print("Job site is invalid")
+        ans = input("would you like to use a provided link? [y/n]")
+        flag = 'link'
+        if ans.lower()=='y':
+            recomend_url = "https://www.linkedin.com/jobs/collections/recommended?lipi=urn%3Ali%3Apage%3Ad_flagship3_job_home%3BobHSV5i9RA6yU%2F%2F5gLL1pQ%3D%3D"
+        else:
+            error_handler(ans, flag)
+    return recomend_url
+
+def input_num_pages():
+    ### The number of pages the user would like to scrape.
+    
+    num_pages = input("Please enter the number of pages you would like to search (1-9): ")
+    flag = 'num'
+    if (not num_pages.isdigit()):
+        ans = input("invalid number, would you like to try again? [y/n] ")
+        error_handler(ans, flag)
+    else:
+        print("Starting program ...")
+        return num_pages
+    
+def error_handler(input_arg, flag):
+    if input_arg=='n':
+        print("Exiting ...")
+        sys.exit(1)
+    elif flag=='num':
+        input_num_pages()
+    elif flag=='link':
+        input_rec_url()
+        
+def create_webdriver():
+    print("Creating webdriver instance ...")
+    options = webdriver.ChromeOptions()
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    return webdriver.Chrome(options=options)
+
+def login(driver):
+    print("Opening linkedIn's login page ...")
+    driver.get("https://linkedin.com/uas/login")
+
+    print("waiting for the page to load ...")
+    time.sleep(5)
+
+    print("entering username ...")
+    username = driver.find_element(By.ID, "username")
+    # In case of an error, try changing the element tag used here.
+
+    # Enter Your Email Address
+    username.send_keys(params['user'])
+
+    print("entering password ...")
+    pword = driver.find_element(By.ID, "password")
+    # In case of an error, try changing the element Wtag used here.
+
+    # Enter Your Password
+    pword.send_keys(params['password'])
+
+    print("Clicking on the log in button ...")
+    # Format (syntax) of writing XPath --> //tagname[@attribute='value']
+    driver.find_element(By.XPATH, "//button[@type='submit']").click()
+    return
+
+def start_scraping(driver, num_pages):
+    print("Getting the job lists ...")
+    # initialise dictionary to store all the information
+    job_dict = {}
+    job_dict['job_title'] = []
+    job_dict['company'] = []
+    job_dict['location'] = []
+    job_dict['level'] = []
+    job_dict['time_posted'] = []
+    job_dict['graduate_suitable'] = []
+    
+    get_job_titles_company(driver, num_pages, job_dict)
+    df = pd.DataFrame(job_dict)
+    return df
+
+def write_textfile(df):
+    print("Creating text file ...")
+    try:
+        df.to_csv('result.txt', index=False)
+        print("Text file created")
+    except:
+        print("Process was unsuccessful")
+    return
+
+def run_program(url, num_pages):
+    # create chrome webdriver
+    driver = create_webdriver()
+    # This instance will be used to log into LinkedIn
+    login(driver)
+    # In case of an error, try changing the XPath used here.
+    print("waiting for the page to load (please verify the human verification if exist) ...")
+    time.sleep(15)
+    
+    print("Getting the recommended jobs page ...")
+    driver.get(url)
+    time.sleep(5)
+    
+    df = start_scraping(driver, num_pages)
+    
+    # Convert to text file
+    write_textfile(df)
+
 def gpt_message(msg):
     ### A function to ask GPT to provide answer as a career coach.
     ### It will return a response that answers the user message 'msg'
@@ -26,7 +137,7 @@ def gpt_message(msg):
     response = response["choices"][0]["message"]["content"]
     return response
 
-def search_job_in_page(job_list, cur_page_num, job_dict):
+def search_job_in_page(driver,job_list, cur_page_num, job_dict):
     ### A function to search for relevant information about a job.
     ### Each information is located in different element. This function scrapes each of the information using element and class.
     ### Returns the current page number which is being scraped.
@@ -87,7 +198,7 @@ def search_job_in_page(job_list, cur_page_num, job_dict):
                 continue
     return cur_page_num
 
-def get_job_titles_company(last_page, job_dict):
+def get_job_titles_company(driver, last_page, job_dict):
     ### Iterate until the last_page which is the number of pages user provided.
     ### This function will call the function to scrape all jobs within a page.
     ### If it reaches the end of page, it will continue to the next page until it reaches the number of pages user requested.
@@ -100,7 +211,7 @@ def get_job_titles_company(last_page, job_dict):
         # Find the element that stores the list of jobs including the job card.
         job_list = soup.find('div', {'class':'scaffold-layout__list-detail-inner'})
 
-        next_page_num = search_job_in_page(job_list,i, job_dict)
+        next_page_num = search_job_in_page(driver,job_list,i, job_dict)
 
         # Click the next page button.
         driver.find_element(By.XPATH, "//button[@aria-label='Page "+str(next_page_num)+"']").click()
@@ -108,92 +219,8 @@ def get_job_titles_company(last_page, job_dict):
         time.sleep(6)
     return next_page_num
 
-def input_rec_url():
-    ### A LinkedIn job search result page for user to provide.
-    ### If not provided, it will use a provided job page link which is recommended page.
-    recomend_url = input("Please enter linkedin job search result page link: ")
-    if not recomend_url.startswith('https://www.linkedin.com'):
-        print("Job site is invalid")
-        ans = input("would you like to use existing link? [y/n]")
-        if ans.lower()=='y':
-            recomend_url = "https://www.linkedin.com/jobs/collections/recommended?lipi=urn%3Ali%3Apage%3Ad_flagship3_job_home%3BobHSV5i9RA6yU%2F%2F5gLL1pQ%3D%3D"
-        else:
-            print("Exiting...")
-            sys.exit(1)
-    return recomend_url
-
-def input_num_pages():
-    num_pages = input("Please enter the number of pages you would like to search (1-9): ")
-    if (not num_pages.isdigit()):
-        ans = input("invalid number, would you like to try again? [y/n] ")
-        error_handler(ans)
-    else:
-        print("Starting program ...")
-        return num_pages
-    
-def error_handler(input_arg):
-    if input_arg=='n':
-        print("Exiting ...")
-        sys.exit(1)
-    else:
-        input_num_pages()
-
 if __name__ == "__main__":
     recomend_url = input_rec_url()
             
-    num_pages = int(input_num_pages())
-    
-    print("Creating webdriver instance ...")
-    options = webdriver.ChromeOptions()
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    driver = webdriver.Chrome(options=options)
-    # This instance will be used to log into LinkedIn
-    
-    print("Opening linkedIn's login page ...")
-    driver.get("https://linkedin.com/uas/login")
-
-    print("waiting for the page to load ...")
-    time.sleep(5)
-
-    print("entering username ...")
-    username = driver.find_element(By.ID, "username")
-    # In case of an error, try changing the element tag used here.
-
-    # Enter Your Email Address
-    username.send_keys(params['user'])
-
-    print("entering password ...")
-    pword = driver.find_element(By.ID, "password")
-    # In case of an error, try changing the element Wtag used here.
-
-    # Enter Your Password
-    pword.send_keys(params['password'])
-
-    print("Clicking on the log in button ...")
-    # Format (syntax) of writing XPath --> //tagname[@attribute='value']
-    driver.find_element(By.XPATH, "//button[@type='submit']").click()
-    # In case of an error, try changing the XPath used here.
-    print("waiting for the page to load (please verify the human verification if exist) ...")
-    time.sleep(15)
-    
-    print("Getting the recommended jobs page ...")
-    driver.get(recomend_url)
-    time.sleep(5)
-    
-    print("Getting the job lists ...")
-    # initialise dictionary to store all the information
-    job_dict = {}
-    job_dict['job_title'] = []
-    job_dict['company'] = []
-    job_dict['location'] = []
-    job_dict['level'] = []
-    job_dict['time_posted'] = []
-    job_dict['graduate_suitable'] = []
-    
-    get_job_titles_company(num_pages, job_dict)
-    df = pd.DataFrame(job_dict)
-    
-    # Convert to text file
-    print("Creating text file ...")
-    df.to_csv('result.txt', index=False)
-    print("Text file created")
+    num_pages = int(input_num_pages())    
+    run_program(recomend_url, num_pages)
